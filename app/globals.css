@@ -1,0 +1,26 @@
+@import "@stargazers-stella/cosmic-ui/theme.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-50 antialiased;
+  font-family: theme("fontFamily.body");
+}
+
+.glass {
+  @apply bg-white/5 border border-white/10 backdrop-blur-2xl;
+}
+
+.surface {
+  @apply bg-white/5;
+}
+
+.prose-muted {
+  @apply text-slate-400;
+}
