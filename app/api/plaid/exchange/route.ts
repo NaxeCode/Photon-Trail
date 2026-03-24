@@ -1,14 +1,13 @@
-import { authOptions } from "@/lib/auth";
+import { getRequiredUserId } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { encryptSecret } from "@/lib/crypto";
 import { plaidClient } from "@/lib/plaid";
 import { plaidItems } from "@/db/schema";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const userId = await getRequiredUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -39,7 +38,7 @@ export async function POST(request: Request) {
       .insert(plaidItems)
       .values({
         id: itemId,
-        userId: session.user.id,
+        userId,
         institutionId: body?.institutionId,
         institutionName: body?.institutionName,
         accessTokenEncrypted: encryptedToken,

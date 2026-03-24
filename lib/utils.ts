@@ -30,3 +30,13 @@ export function shortTime(date: Date | string) {
     minute: "2-digit",
   }).format(d);
 }
+
+export function formatCategoryLabel(value: string | null | undefined) {
+  if (!value) return "Uncategorized";
+
+  return value
+    .split(/[._]/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}

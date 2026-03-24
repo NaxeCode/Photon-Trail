@@ -1,14 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useMemo, useState } from "react";
 import {
   Badge,
   Button,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Table,
   TableBody,
   TableCell,
@@ -16,11 +11,12 @@ import {
   TableHeader,
   TableRow,
 } from "@stargazers-stella/cosmic-ui";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCategoryLabel, formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 
 export type TransactionRow = {
   id: string;
+  plaidId?: string | null;
   name: string | null;
   merchant: string | null;
   description: string | null;
@@ -41,6 +37,7 @@ type TransactionsTableProps = {
   onPageChange: (page: number) => void;
   onManualUpdate: (id: string, value: string) => Promise<void>;
   isLoading?: boolean;
+  isRefreshing?: boolean;
   onRefreshAi: () => Promise<void>;
   aiRunning?: boolean;
 };
@@ -53,51 +50,91 @@ export function TransactionsTable({
   onManualUpdate,
   onRefreshAi,
   isLoading,
+  isRefreshing,
   aiRunning,
 }: TransactionsTableProps) {
-  const [pending, startTransition] = useTransition();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [refreshingAi, setRefreshingAi] = useState(false);
+  const categories = useMemo(
+    () => [
+      "Groceries",
+      "Transport",
+      "Dining",
+      "Entertainment",
+      "Housing",
+      "Health",
+      "Shopping",
+      "Travel",
+      "Income",
+      "Other",
+    ],
+    [],
+  );
 
-  const handleManual = (id: string, value: string) =>
-    startTransition(async () => {
+  const handleManual = async (id: string, value: string) => {
+    setSavingId(id);
+
+    try {
       await onManualUpdate(id, value);
+      setEditingId(null);
       toast.success("Category updated");
-    });
+    } catch {
+      // parent handler surfaces the error toast
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleRefreshAiClick = async () => {
+    setRefreshingAi(true);
+
+    try {
+      await onRefreshAi();
+    } finally {
+      setRefreshingAi(false);
+    }
+  };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <h3 className="text-lg font-semibold">Recent transactions</h3>
+        <div>
+          <p className="muted-label mb-2">Transactions</p>
+          <h3 className="ui-heading text-2xl">Recent ledger entries</h3>
+          <p className="mt-2 text-xs text-[color:var(--text-muted)]">
+            {isRefreshing
+              ? "Refreshing ledger in the background..."
+              : "Live edits stay in place while data refreshes."}
+          </p>
+        </div>
         <div className="flex w-full gap-2 sm:w-auto">
           <Button
             id="ai-refresh-button"
             variant="secondary"
-            className="w-full sm:w-auto"
-            disabled={pending || aiRunning}
-            onClick={() =>
-              startTransition(async () => {
-                await onRefreshAi();
-              })
-            }
+            className="btn-primary w-full sm:w-auto"
+            disabled={refreshingAi || aiRunning}
+            onClick={handleRefreshAiClick}
           >
-            {pending || aiRunning ? "Re-analyzing..." : "Refresh AI"}
+            {refreshingAi || aiRunning ? "Re-analyzing..." : "Refresh AI"}
           </Button>
         </div>
       </div>
-      <Table>
+      <Table className="ui-table table-tint overflow-hidden rounded-[1.5rem]">
         <TableHeader>
-          <TableRow>
-            <TableHead>Merchant</TableHead>
-            <TableHead className="hidden sm:table-cell">Source</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead className="hidden sm:table-cell">AI</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
-            <TableHead className="hidden text-right sm:table-cell">Date</TableHead>
+          <TableRow className="border-white/10">
+            <TableHead className="text-[color:var(--text-muted)]">Merchant</TableHead>
+            <TableHead className="hidden text-[color:var(--text-muted)] sm:table-cell">Source</TableHead>
+            <TableHead className="text-[color:var(--text-muted)]">Category</TableHead>
+            <TableHead className="hidden text-[color:var(--text-muted)] sm:table-cell">AI</TableHead>
+            <TableHead className="text-right text-[color:var(--text-muted)]">Amount</TableHead>
+            <TableHead className="hidden text-right text-[color:var(--text-muted)] sm:table-cell">Date</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {isLoading &&
             Array.from({ length: 3 }).map((_, idx) => (
-              <TableRow key={`skeleton-${idx}`}>
+              <TableRow key={`skeleton-${idx}`} className="border-white/5">
                 <TableCell colSpan={6}>
                   <div className="space-y-2">
                     <div className="h-4 w-1/2 animate-pulse rounded bg-white/10" />
@@ -108,51 +145,67 @@ export function TransactionsTable({
             ))}
           {!isLoading &&
             items.map((tx) => (
-              <TableRow key={tx.id} className="align-top hover:bg-white/5">
+              <TableRow key={tx.id} className="align-top border-white/5 hover:bg-white/5">
                 <TableCell>
                   <div className="font-medium">{tx.name ?? tx.merchant ?? "Purchase"}</div>
-                  <div className="text-xs text-slate-400">{tx.description}</div>
-                  <div className="mt-1 text-[11px] text-slate-500">
+                  <div className="text-xs text-[color:var(--text-muted)]">{tx.description}</div>
+                  <div className="mt-1 text-[11px] text-[color:var(--text-muted)]">
                     {formatDate(tx.postedAt)}
                   </div>
                 </TableCell>
-                <TableCell className="hidden text-sm text-slate-400 sm:table-cell">
+                <TableCell className="hidden text-sm text-[color:var(--text-muted)] sm:table-cell">
                   {tx.plaidItem?.institutionName ?? "Linked"}
                 </TableCell>
-                <TableCell className="max-w-[160px]">
-                  <Select
-                    value={tx.manualCategory ?? tx.category ?? tx.aiCategory ?? "Other"}
-                    onValueChange={(value) => handleManual(tx.id, value)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Choose" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[280px] max-w-[360px]">
-                      {["Groceries", "Transport", "Dining", "Entertainment", "Housing", "Health", "Shopping", "Travel", "Income", "Other"].map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <TableCell className="max-w-[260px]">
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      className="category-chip category-chip-active"
+                      onClick={() => setEditingId((current) => (current === tx.id ? null : tx.id))}
+                    >
+                      {formatCategoryLabel(tx.manualCategory ?? tx.category ?? tx.aiCategory ?? "Other")}
+                    </button>
+                    {editingId === tx.id ? (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-2">
+                        <div className="flex flex-wrap gap-2">
+                          {categories.map((cat) => {
+                            const active =
+                              (tx.manualCategory ?? tx.category ?? tx.aiCategory ?? "Other") === cat;
+
+                            return (
+                              <button
+                                key={cat}
+                                type="button"
+                                className={`category-chip ${active ? "category-chip-active" : ""}`}
+                                disabled={savingId === tx.id}
+                                onClick={() => void handleManual(tx.id, cat)}
+                              >
+                                {savingId === tx.id && active ? "Saving..." : formatCategoryLabel(cat)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </TableCell>
                 <TableCell className="hidden sm:table-cell">
-                  <Badge variant="outline">
-                    {tx.aiCategory ?? "Pending"}
+                  <Badge variant="outline" className="border-white/10 bg-white/5 text-[color:var(--text)]">
+                    {tx.aiCategory ? formatCategoryLabel(tx.aiCategory) : "Pending"}
                     {tx.aiConfidence ? ` (${(tx.aiConfidence * 100).toFixed(0)}%)` : ""}
                   </Badge>
                 </TableCell>
                 <TableCell className="text-right font-semibold">
                   {formatCurrency(Number(tx.amount ?? 0), tx.currency ?? "USD")}
                 </TableCell>
-                <TableCell className="hidden text-right text-sm text-slate-400 sm:table-cell">
+                <TableCell className="hidden text-right text-sm text-[color:var(--text-muted)] sm:table-cell">
                   {formatDate(tx.postedAt)}
                 </TableCell>
               </TableRow>
             ))}
           {!isLoading && items.length === 0 && (
             <TableRow>
-              <TableCell colSpan={6} className="py-6 text-center text-sm text-slate-400">
+              <TableCell colSpan={6} className="py-6 text-center text-sm text-[color:var(--text-muted)]">
                 No transactions found for these filters.
               </TableCell>
             </TableRow>
@@ -160,14 +213,15 @@ export function TransactionsTable({
         </TableBody>
       </Table>
 
-      <div className="flex items-center justify-between rounded-lg bg-white/5 px-4 py-3 text-sm">
-        <span className="text-slate-400">
+      <div className="panel-soft flex items-center justify-between px-4 py-3 text-sm">
+        <span className="text-[color:var(--text-muted)]">
           Page {page} of {pageCount || 1}
         </span>
         <div className="flex gap-2">
           <Button
             variant="outline"
             size="sm"
+            className="btn-ghost"
             disabled={page <= 1}
             onClick={() => onPageChange(page - 1)}
           >
@@ -176,6 +230,7 @@ export function TransactionsTable({
           <Button
             variant="outline"
             size="sm"
+            className="btn-ghost"
             disabled={page >= pageCount}
             onClick={() => onPageChange(page + 1)}
           >

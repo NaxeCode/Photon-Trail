@@ -1,12 +1,11 @@
-import { authOptions } from "@/lib/auth";
+import { getRequiredUserId } from "@/lib/auth";
 import { syncPlaidForUser } from "@/lib/plaid-sync";
 import { plaidSyncRequestSchema } from "@/lib/validators";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const userId = await getRequiredUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -19,7 +18,7 @@ export async function POST(request: Request) {
   const targets = parsed.data.itemIds ?? (parsed.data.itemId ? [parsed.data.itemId] : undefined);
 
   try {
-    const summary = await syncPlaidForUser(session.user.id, targets);
+    const summary = await syncPlaidForUser(userId, targets);
     return NextResponse.json({ ok: true, ...summary });
   } catch (error) {
     console.error("Plaid sync error", error);

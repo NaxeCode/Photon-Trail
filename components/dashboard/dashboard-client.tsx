@@ -33,6 +33,34 @@ export function DashboardClient({
   initialTransactions,
   defaultFilters,
 }: DashboardClientProps) {
+  const applyOptimisticCategory = (
+    current:
+      | {
+          items: TransactionRow[];
+          page: number;
+          pageCount: number;
+          total: number;
+        }
+      | undefined,
+    transactionId: string,
+    category: string,
+  ) => {
+    if (!current) return current;
+
+    return {
+      ...current,
+      items: current.items.map((tx) =>
+        tx.id === transactionId
+          ? {
+              ...tx,
+              manualCategory: category,
+              category,
+            }
+          : tx,
+      ),
+    };
+  };
+
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [page, setPage] = useState(initialTransactions.page);
   const [lastAiRun, setLastAiRun] = useState(0);
@@ -57,8 +85,10 @@ export function DashboardClient({
     data: dashboardData,
     mutate: mutateDashboard,
     error: dashboardError,
+    isValidating: dashboardValidating,
   } = useSWR(`/api/dashboard?${query}`, undefined, {
     fallbackData: initialDashboard,
+    keepPreviousData: true,
   });
 
   const {
@@ -68,6 +98,7 @@ export function DashboardClient({
     error: transactionsError,
   } = useSWR(`/api/transactions?${query}`, undefined, {
     fallbackData: initialTransactions,
+    keepPreviousData: true,
   });
 
   const categories = useMemo(
@@ -96,16 +127,39 @@ export function DashboardClient({
 
   const handleManualUpdate = async (id: string, manualCategory: string) => {
     try {
-      await fetch("/api/transactions/update-category", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactionId: id, manualCategory }),
-      });
-      await mutateTransactions();
-      await mutateDashboard();
+      let updatedCategory = manualCategory;
+
+      await mutateTransactions(
+        async (current) => {
+          const response = await fetch("/api/transactions/update-category", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ transactionId: id, manualCategory }),
+          });
+
+          if (!response.ok) {
+            throw new Error("Could not update category");
+          }
+
+          const updated = await response.json();
+          updatedCategory = updated.manualCategory ?? updated.category ?? manualCategory;
+
+          return applyOptimisticCategory(current, id, updatedCategory);
+        },
+        {
+          optimisticData: (current) => applyOptimisticCategory(current, id, manualCategory),
+          rollbackOnError: true,
+          populateCache: true,
+          revalidate: false,
+        },
+      );
+      void mutateTransactions();
+      void mutateDashboard();
+      return updatedCategory;
     } catch (error) {
       console.error(error);
       toast.error("Could not update category");
+      throw error;
     }
   };
 
@@ -150,9 +204,36 @@ export function DashboardClient({
         return;
       }
 
+      const suggestions = Array.isArray(data?.suggestions) ? data.suggestions : [];
+
+      await mutateTransactions(
+        (current) => {
+          if (!current || suggestions.length === 0) return current;
+
+          return {
+            ...current,
+            items: current.items.map((tx) => {
+              const suggestion = suggestions.find(
+                (item: { transactionId: string }) => item.transactionId === tx.id,
+              );
+
+              if (!suggestion) return tx;
+
+              return {
+                ...tx,
+                aiCategory: suggestion.label ?? tx.aiCategory,
+                aiConfidence:
+                  typeof suggestion.confidence === "number" ? suggestion.confidence : tx.aiConfidence,
+              };
+            }),
+          };
+        },
+        { populateCache: true, revalidate: false },
+      );
+
       toast.success("AI categories refreshed");
-      await mutateTransactions();
-      await mutateDashboard();
+      void mutateTransactions();
+      void mutateDashboard();
       setLastAiRun(Date.now());
     } catch (error) {
       console.error(error);
@@ -178,8 +259,8 @@ export function DashboardClient({
       const added = data?.added ?? 0;
       const modified = data?.modified ?? 0;
       toast.success(`Synced ${added} new and ${modified} updated`);
-      await mutateTransactions();
-      await mutateDashboard();
+      void mutateTransactions();
+      void mutateDashboard();
     } catch (error) {
       console.error(error);
       toast.error("Failed to sync Plaid");
@@ -189,29 +270,42 @@ export function DashboardClient({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-            Photon Trail
-          </p>
-          <h1 className="text-3xl font-semibold">Cosmic spending overview</h1>
-          <p className="text-sm text-slate-400">
-            AI-enhanced categories with Plaid-backed transactions.
-          </p>
+    <div className="space-y-6 py-4">
+      <section className="section-shell">
+        <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-4">
+            <p className="eyebrow">Photon Trail</p>
+            <div className="space-y-3">
+              <h1 className="ui-heading text-4xl sm:text-5xl">
+                Spending, framed like an editorial report.
+              </h1>
+              <p className="max-w-2xl text-sm leading-6 text-[color:var(--text-muted)] sm:text-base">
+                Review movement, pressure-test AI categories, and sync fresh activity without
+                losing the signal in a generic finance UI.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3 text-sm">
+              <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[color:var(--text-muted)]">
+                {transactionsData?.total ?? initialTransactions.total} transactions in view
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-[color:var(--text-muted)]">
+                AI ready for manual review
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <PlaidLinkButton />
+            <Button
+              variant="secondary"
+              className="btn-primary w-full sm:w-auto"
+              onClick={handleSyncPlaid}
+              disabled={syncing}
+            >
+              {syncing ? "Syncing..." : "Sync Plaid"}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <PlaidLinkButton />
-          <Button
-            variant="secondary"
-            className="w-full sm:w-auto"
-            onClick={handleSyncPlaid}
-            disabled={syncing}
-          >
-            {syncing ? "Syncing..." : "Sync Plaid"}
-          </Button>
-        </div>
-      </div>
+      </section>
 
       <SummaryCards
         totalSpend={dashboardData?.totalSpend ?? 0}
@@ -232,7 +326,7 @@ export function DashboardClient({
         }}
       />
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="dashboard-grid">
         <CategoryBreakdown categories={dashboardData?.categories ?? []} />
         <Timeline timeline={dashboardData?.timeline ?? {}} />
       </div>
@@ -240,7 +334,7 @@ export function DashboardClient({
       {showEmptyState ? (
         <EmptyState onSync={handleSyncPlaid} onAi={handleRefreshAi} />
       ) : (
-        <Card className="glass">
+        <Card className="panel overflow-hidden border-white/10">
           <CardContent className="p-4 sm:p-6">
             <TransactionsTable
               items={transactionsData?.items ?? []}
@@ -248,7 +342,8 @@ export function DashboardClient({
               pageCount={transactionsData?.pageCount ?? 1}
               onPageChange={setPage}
               onManualUpdate={handleManualUpdate}
-              isLoading={transactionsLoading}
+              isLoading={!transactionsData && transactionsLoading}
+              isRefreshing={transactionsLoading || dashboardValidating}
               onRefreshAi={handleRefreshAi}
               aiRunning={aiRunning}
             />

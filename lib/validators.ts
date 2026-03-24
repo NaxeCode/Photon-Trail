@@ -28,8 +28,8 @@ export const aiResponseSchema = z.object({
       id: z.string(),
       category: z.string(),
       confidence: z.number().min(0).max(1),
-      label: z.string().optional(),
-      rationale: z.string().optional(),
+      label: z.string().nullable(),
+      rationale: z.string().nullable(),
     }),
   ),
 });

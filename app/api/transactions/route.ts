@@ -1,12 +1,11 @@
-import { authOptions } from "@/lib/auth";
+import { getRequiredUserId } from "@/lib/auth";
 import { getPaginatedTransactions } from "@/lib/data";
 import { transactionQuerySchema } from "@/lib/validators";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const userId = await getRequiredUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -20,7 +19,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const data = await getPaginatedTransactions(session.user.id, parsed.data);
+    const data = await getPaginatedTransactions(userId, parsed.data);
     return NextResponse.json(data, {
       headers: { "Cache-Control": "private, max-age=10, stale-while-revalidate=60" },
     });

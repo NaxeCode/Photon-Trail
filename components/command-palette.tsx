@@ -22,6 +22,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
   const { status } = useSession();
+  const isDevBypass = process.env.NEXT_PUBLIC_DEV_BYPASS_AUTH === "true";
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
@@ -64,7 +65,9 @@ export function CommandPalette() {
         }
       },
     },
-    status === "authenticated"
+    isDevBypass
+      ? null
+      : status === "authenticated"
       ? {
           label: "Sign out",
           hint: "Logout",
@@ -79,11 +82,11 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-w-[360px] p-0 sm:max-w-2xl">
+      <DialogContent className="ui-dialog max-w-[360px] p-0 sm:max-w-2xl">
         <DialogHeader className="px-4 pt-4">
-          <DialogTitle className="text-base">Quick actions</DialogTitle>
+          <DialogTitle className="ui-heading text-base">Quick actions</DialogTitle>
         </DialogHeader>
-        <Command className="max-h-[70vh]">
+        <Command className="ui-command max-h-[70vh]">
           <CommandInput placeholder="Search commands…" />
           <CommandList className="max-h-[55vh] sm:max-h-[420px]">
             <CommandEmpty>No actions found.</CommandEmpty>
@@ -97,7 +100,7 @@ export function CommandPalette() {
                   }}
                 >
                   <span className="flex-1">{action.label}</span>
-                  <span className="text-xs text-muted-foreground">{action.hint}</span>
+                  <span className="text-xs text-[color:var(--text-muted)]">{action.hint}</span>
                 </CommandItem>
               ))}
             </CommandGroup>

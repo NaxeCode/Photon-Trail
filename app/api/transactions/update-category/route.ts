@@ -1,12 +1,11 @@
-import { authOptions } from "@/lib/auth";
+import { getRequiredUserId } from "@/lib/auth";
 import { updateManualCategory } from "@/lib/data";
 import { manualCategorySchema } from "@/lib/validators";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 export async function PATCH(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const userId = await getRequiredUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -18,7 +17,7 @@ export async function PATCH(request: Request) {
 
   try {
     const tx = await updateManualCategory(
-      session.user.id,
+      userId,
       parsed.data.transactionId,
       parsed.data.manualCategory,
     );

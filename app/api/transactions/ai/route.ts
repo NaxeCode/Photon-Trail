@@ -1,14 +1,13 @@
-import { authOptions } from "@/lib/auth";
+import { getRequiredUserId } from "@/lib/auth";
 import { categorizeTransactions } from "@/lib/ai";
 import { upsertAiSuggestions } from "@/lib/data";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { aiRequestSchema } from "@/lib/validators";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const userId = await getRequiredUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -18,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const rate = enforceRateLimit(`ai:${session.user.id}`);
+  const rate = enforceRateLimit(`ai:${userId}`);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: "Rate limited. Try again shortly." },
@@ -28,7 +27,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await categorizeTransactions(parsed.data.transactions);
-    const updated = await upsertAiSuggestions(session.user.id, result.suggestions);
+    const updated = await upsertAiSuggestions(userId, result.suggestions);
     return NextResponse.json({ ok: true, suggestions: updated });
   } catch (error) {
     console.error("AI categorize error", error);

@@ -18,7 +18,7 @@ async function main() {
   const [existingUser] = await db
     .select()
     .from(users)
-    .where(eq(users.email, "demo@aurora.money"));
+    .where(eq(users.email, "demo@photontrail.app"));
 
   const userId =
     existingUser?.id ??

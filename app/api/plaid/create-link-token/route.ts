@@ -1,11 +1,10 @@
-import { authOptions } from "@/lib/auth";
+import { getRequiredUserId } from "@/lib/auth";
 import { plaidClient } from "@/lib/plaid";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 export async function POST() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) {
+  const userId = await getRequiredUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -24,7 +23,7 @@ export async function POST() {
       `${webhookBase}${webhookSecret ? `${webhookBase.includes("?") ? "&" : "?"}secret=${webhookSecret}` : ""}`;
 
     const response = await plaidClient.linkTokenCreate({
-      user: { client_user_id: session.user.id },
+      user: { client_user_id: userId },
       client_name: "Photon Trail",
       products: ["transactions"],
       language: "en",

@@ -14,12 +14,45 @@ type SyncSummary = {
   removed: number;
 };
 
+/**
+ * Minimal subset of the Plaid transaction object that this app consumes.
+ * We define this narrower type so the mapping is explicit and easy to reason about.
+ */
+export type PlaidTransactionMinimal = {
+  transaction_id: string;
+  amount: number;
+  iso_currency_code?: string | null;
+  name?: string | null;
+  merchant_name?: string | null;
+  original_description?: string | null;
+  pending?: boolean;
+  date?: string | null; // YYYY-MM-DD
+  authorized_date?: string | null; // YYYY-MM-DD
+  datetime?: string | null; // ISO datetime when available
+  category?: string[] | null;
+  personal_finance_category?: { primary?: string | null; detailed?: string | null } | null;
+};
+
 function mapPlaidTransaction(
-  tx: TransactionsSyncResponse["added"][number] | TransactionsSyncResponse["modified"][number],
+  tx: TransactionsSyncResponse["added"][number] | TransactionsSyncResponse["modified"][number] | PlaidTransactionMinimal,
   item: PlaidItemRow,
 ) {
-  const postedDate = tx.authorized_date ?? tx.date ?? tx.datetime ?? null;
-  const postedAt = postedDate ? new Date(`${postedDate}T00:00:00Z`) : new Date();
+  // Prefer `datetime` (preserves time-of-day). If missing, fall back to
+  // `authorized_date` or `date` and treat them as midnight UTC. If no date is
+  // present, use epoch (1970-01-01) to avoid inserting misleading "now" timestamps.
+  let postedAt: Date;
+  if (tx.datetime) {
+    // `datetime` is expected to be an ISO-like string; let Date parse it.
+    postedAt = new Date(tx.datetime as string);
+  } else {
+    const dateStr = (tx.authorized_date ?? tx.date) as string | undefined | null;
+    if (dateStr) {
+      postedAt = new Date(`${dateStr}T00:00:00Z`);
+    } else {
+      postedAt = new Date(0);
+    }
+  }
+
   const category =
     tx.personal_finance_category?.primary ??
     tx.category?.[0] ??
@@ -64,7 +97,7 @@ async function upsertTransactions(
         description: sql`excluded.description`,
         status: sql`excluded.status`,
         category: sql`excluded.category`,
-        postedAt: sql`excluded.postedAt`,
+        postedAt: sql`excluded."postedAt"`,
         pending: sql`excluded.pending`,
         plaidItemId: sql`excluded."plaidItemId"`,
         updatedAt: new Date(),

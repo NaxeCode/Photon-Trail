@@ -16,19 +16,19 @@ export default function Error({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl items-center px-4 py-12">
-      <Card className="w-full glass">
+      <Card className="panel w-full">
         <CardHeader>
-          <CardTitle className="text-2xl">Something went wrong</CardTitle>
+          <CardTitle className="ui-heading text-2xl">Something went wrong</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <p className="text-sm text-slate-300">
+          <p className="text-sm text-[color:var(--text-muted)]">
             The dashboard hit an error. Try reloading or jump back to the home view.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <Button variant="secondary" className="w-full sm:w-auto" onClick={() => reset()}>
+            <Button variant="secondary" className="btn-primary w-full sm:w-auto" onClick={() => reset()}>
               Retry
             </Button>
-            <Button variant="outline" className="w-full sm:w-auto" onClick={() => location.assign("/")}>
+            <Button variant="outline" className="btn-secondary w-full sm:w-auto" onClick={() => location.assign("/")}>
               Back home
             </Button>
           </div>

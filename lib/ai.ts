@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
 import { aiCategorizationSchema, aiResponseSchema } from "./validators";
 
 const openaiApiKey = process.env.OPENAI_API_KEY ?? process.env.OPENAI_API_KEY_ID;
@@ -50,7 +51,9 @@ export async function categorizeTransactions(input: unknown) {
       content:
         "You are a finance assistant that categorizes personal transactions. " +
         "Return concise JSON with friendly bucket labels (e.g., Groceries, Housing, Transport, Subscriptions, Entertainment, Coffee, Health, Travel, Utilities, Income, Transfers, Other). " +
-        "Provide a confidence score between 0 and 1. Keep temperature low for consistent output.",
+        "Provide a confidence score between 0 and 1. " +
+        "Always return every field in the schema. Use null for label or rationale when uncertain or unnecessary. " +
+        "Keep rationale short. Keep temperature low for consistent output.",
     },
     {
       role: "user",
@@ -65,8 +68,20 @@ export async function categorizeTransactions(input: unknown) {
       role: "assistant",
       content: JSON.stringify({
         suggestions: [
-          { id: "ex1", category: "Groceries", confidence: 0.93, label: "Groceries - Whole Foods" },
-          { id: "ex2", category: "Transport", confidence: 0.88, label: "Rideshare" },
+          {
+            id: "ex1",
+            category: "Groceries",
+            confidence: 0.93,
+            label: "Groceries - Whole Foods",
+            rationale: "Whole Foods is a grocery merchant.",
+          },
+          {
+            id: "ex2",
+            category: "Transport",
+            confidence: 0.88,
+            label: "Rideshare",
+            rationale: "Uber trip indicates transport spending.",
+          },
         ],
       }),
     },
@@ -77,26 +92,24 @@ export async function categorizeTransactions(input: unknown) {
   ];
 
   const response = await retryWithBackoff(() =>
-    openai.chat.completions.create({
+    openai.beta.chat.completions.parse({
       model: process.env.OPENAI_MODEL ?? "gpt-4o-mini",
       temperature: 0.2,
-      max_tokens: 400,
+      max_tokens: 1200,
+      response_format: zodResponseFormat(aiResponseSchema, "ai_response"),
       messages,
     }),
   );
 
-  const raw = response.choices[0]?.message?.content ?? "{}";
-  let parsedResponse: unknown;
-  try {
-    parsedResponse = JSON.parse(raw);
-  } catch (error) {
+  const message = response.choices[0]?.message;
+  if (message?.refusal) {
+    throw new Error(`AI refused request: ${message.refusal}`);
+  }
+
+  const parsedResponse = message?.parsed;
+  if (!parsedResponse) {
     throw new Error("AI response was not valid JSON");
   }
 
-  const validated = aiResponseSchema.safeParse(parsedResponse);
-  if (!validated.success) {
-    throw new Error("Failed to validate AI response");
-  }
-
-  return validated.data;
+  return parsedResponse;
 }

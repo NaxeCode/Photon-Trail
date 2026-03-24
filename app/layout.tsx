@@ -27,7 +27,7 @@ export default function RootLayout({
       >
         <Providers>
           <CommandPalette />
-          <div className="min-h-screen">{children}</div>
+          <div className="min-h-screen overflow-x-hidden">{children}</div>
         </Providers>
       </body>
     </html>

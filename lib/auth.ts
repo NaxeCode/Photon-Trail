@@ -1,8 +1,15 @@
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
+import { eq } from "drizzle-orm";
 import { type NextAuthOptions, getServerSession } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { db } from "./db";
 import * as schema from "@/db/schema";
+
+const devBypassUser = {
+  id: "",
+  name: "Local Dev",
+  email: "demo@photontrail.app",
+};
 
 export const authOptions: NextAuthOptions = {
   adapter: DrizzleAdapter(db, {
@@ -32,3 +39,32 @@ export const authOptions: NextAuthOptions = {
 };
 
 export const getServerAuthSession = () => getServerSession(authOptions);
+
+export function isDevAuthBypassed() {
+  return process.env.NODE_ENV !== "production" && process.env.DEV_BYPASS_AUTH === "true";
+}
+
+export async function getAppSession() {
+  if (isDevAuthBypassed()) {
+    const [user] = await db
+      .select({ id: schema.users.id, name: schema.users.name, email: schema.users.email })
+      .from(schema.users)
+      .where(eq(schema.users.email, devBypassUser.email));
+
+    return {
+      user: {
+        id: user?.id ?? "",
+        name: user?.name ?? devBypassUser.name,
+        email: user?.email ?? devBypassUser.email,
+      },
+      expires: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
+    };
+  }
+
+  return getServerSession(authOptions);
+}
+
+export async function getRequiredUserId() {
+  const session = await getAppSession();
+  return session?.user?.id ?? null;
+}
