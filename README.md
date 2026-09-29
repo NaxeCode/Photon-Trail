@@ -1,94 +1,72 @@
 # Photon Trail
 
-**WIP:** Photon Trail is actively under development. The core architecture is in place (auth, Plaid ingestion, DB, AI categorization), but features and polish are still evolving.
+A personal-finance pipeline: link bank accounts through Plaid, sync transactions into Postgres with cursor-based incremental sync, and get AI category suggestions with confidence scores.
 
-An AI-assisted personal finance dashboard: connect accounts with Plaid, store transactions in Neon/Postgres, and use OpenAI to suggest clean, human-friendly categories with confidence scores.
+[![status](https://img.shields.io/badge/status-wip-dbbc7f?style=flat&labelColor=2d353b)](#status)
+![Next.js](https://img.shields.io/badge/Next.js-14-7fbbb3?style=flat&labelColor=2d353b&logo=nextdotjs&logoColor=d3c6aa)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-7fbbb3?style=flat&labelColor=2d353b&logo=typescript&logoColor=d3c6aa)
+![Postgres](https://img.shields.io/badge/Postgres-Neon-7fbbb3?style=flat&labelColor=2d353b&logo=postgresql&logoColor=d3c6aa)
+![Drizzle](https://img.shields.io/badge/Drizzle-ORM-7fbbb3?style=flat&labelColor=2d353b&logo=drizzle&logoColor=d3c6aa)
+![Plaid](https://img.shields.io/badge/Plaid-transactions-7fbbb3?style=flat&labelColor=2d353b)
 
-## Screenshots
-Add your images to `docs/screenshots/` and replace these placeholders.
+## What it does
 
-![Dashboard overview](docs/screenshots/dashboard.png)
-![Transactions table + filters](docs/screenshots/transactions.png)
-![AI categorization](docs/screenshots/ai-categorization.png)
-![Plaid link flow](docs/screenshots/plaid-link.png)
+- Google sign-in through NextAuth with database-backed sessions (Drizzle adapter).
+- Plaid Link flow: the server creates the link token and exchanges the public token; the Plaid access token never reaches the client and is stored encrypted.
+- Incremental transaction sync with Plaid's `/transactions/sync` cursor, triggered by the user or by a Plaid webhook.
+- AI categorization: batches of transactions go to OpenAI, the JSON response is validated with Zod, and suggestions are stored with a confidence score and the model name.
+- Dashboard with summary cards, category breakdown, timeline, filters, and inline manual category overrides.
 
-## Key Features
-- Plaid Link connection flow (no access tokens sent to the client).
-- Postgres-backed persistence (Neon) with Drizzle ORM + migrations.
-- Google OAuth sign-in (NextAuth) with DB sessions.
-- AI categorization endpoint that validates responses with Zod before writing suggestions.
-- Mobile-first dashboard UX with filters and inline category overrides.
+## How it works
 
-## Tech Stack
-- Framework: Next.js 14 App Router (React 18, TypeScript)
-- UI: Tailwind CSS + `@stargazers-stella/cosmic-ui` + `sonner`
-- Data: Neon Postgres + Drizzle ORM + `drizzle-kit`
-- Auth: NextAuth (Google) + Drizzle adapter
-- Integrations: Plaid (`react-plaid-link` + server routes)
-- AI: OpenAI SDK (`openai`)
-- Fetching: SWR
-- Testing: Vitest
+```mermaid
+flowchart LR
+    U[Browser] -->|Plaid Link| P[Plaid]
+    U -->|public token| X["/api/plaid/exchange"]
+    X -->|exchange| P
+    X -->|AES-256-GCM token| DB[(Neon Postgres)]
+    U -->|manual sync| S["/api/plaid/sync"]
+    P -.webhook.-> WH["/api/plaid/webhook"]
+    S & WH --> SY[lib/plaid-sync<br/>cursor loop]
+    SY -->|transactionsSync| P
+    SY -->|upsert on plaidId<br/>save cursor| DB
+    U -->|categorize| AI["/api/transactions/ai"]
+    AI -->|rate limit, retry| O[OpenAI]
+    AI -->|Zod-validated suggestions| DB
+```
 
-## How It Works
-1. User signs in with Google (NextAuth + DB sessions).
-2. Plaid Link creates a link token; the client completes linking and returns a public token.
-3. Server exchanges the public token and stores an encrypted access token at rest.
-4. A sync route pulls transactions incrementally using Plaid cursors.
-5. An AI route batches transactions, requests category suggestions, validates JSON via Zod, and upserts suggestions.
+Mechanisms in the code:
 
-## Quickstart (Local)
-**Prereqs:** Node 20+ recommended, a Postgres database (Neon or local), Plaid sandbox keys.
+- **Idempotent ingestion.** Transactions are upserted on a unique `plaidId`, so replaying a sync page or receiving a duplicate webhook updates rows instead of duplicating them. Removed transactions are soft-marked `status = 'removed'`.
+- **Cursor checkpointing.** The sync loop pages with `count: 100` until `has_more` is false, then stores `next_cursor` and `lastSyncedAt` on the Plaid item so the next run resumes from there (`lib/plaid-sync.ts`).
+- **Secrets at rest.** Plaid access tokens are encrypted with AES-256-GCM using a key derived via scrypt from `PLAID_ENCRYPTION_KEY` (`lib/crypto.ts`).
+- **Retries with backoff.** OpenAI calls retry up to 3 times on 429 and 5xx responses, doubling from 500 ms (`lib/ai.ts`).
+- **Rate limiting.** AI categorization is limited per user per minute (`AI_RATE_LIMIT_PER_MINUTE`, default 6) and returns `429` with `Retry-After` (`lib/rate-limit.ts`). The limiter is in-memory, so it is per instance.
+- **Validation at the boundary.** Request bodies and model output are parsed with Zod before anything is written, and AI suggestions are applied only to transaction ids owned by the signed-in user.
+- **Auth on every data route.** API routes check the NextAuth session; the Plaid webhook checks an optional shared secret.
+- **Schema and migrations.** Drizzle schema in `db/schema.ts`, generated SQL migrations in `drizzle/`, indexes on `(userId, postedAt)` and `(userId, category)`.
+
+Data model: `users`, `accounts`, `sessions`, `verificationTokens` (auth), `plaidItems` (encrypted token, cursor, sync status), `transactions` (amount, merchant, Plaid category, `aiCategory`, `aiConfidence`, `manualCategory`), and `aiCategorySuggestions` (category, confidence, rationale, model, raw suggestion).
+
+## Getting started
+
+Requires Node.js 20+, a Postgres database (Neon or local) and Plaid sandbox keys. OpenAI is optional.
 
 ```bash
+git clone https://github.com/NaxeCode/Photon-Trail.git
 cd Photon-Trail
 npm install
-cp .env.example .env.local
-```
-
-Run migrations + seed:
-```bash
-npm run db:generate
+cp .env.example .env.local   # DATABASE_URL, NEXTAUTH_*, GOOGLE_*, PLAID_*, PLAID_ENCRYPTION_KEY, OPENAI_API_KEY
 npm run db:migrate
 npm run db:seed
+npm run dev                  # http://localhost:3000
 ```
 
-Start dev server:
-```bash
-npm run dev
-```
-Open `http://localhost:3000`.
+Other scripts: `npm run db:generate` (after schema changes), `npm run db:studio`, `npm test` (Vitest), `npm run lint`.
 
-## Configuration
-Core env vars (see `.env.example`):
+## Status
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | Yes | Postgres connection string (`sslmode=require` for Neon) |
-| `NEXTAUTH_URL` | Yes | App base URL |
-| `NEXTAUTH_SECRET` | Yes | Session encryption/signing |
-| `GOOGLE_CLIENT_ID` | Optional | Google OAuth |
-| `GOOGLE_CLIENT_SECRET` | Optional | Google OAuth |
-| `PLAID_CLIENT_ID` | Optional | Plaid API |
-| `PLAID_SECRET` | Optional | Plaid API |
-| `PLAID_ENV` | Optional | `sandbox`/`development`/`production` |
-| `PLAID_ENCRYPTION_KEY` | Yes (for Plaid) | Encrypt Plaid access tokens at rest (32+ chars) |
-| `OPENAI_API_KEY` | Optional | Enable AI categorization |
-| `OPENAI_MODEL` | Optional | Defaults to `gpt-4o-mini` |
-| `AI_RATE_LIMIT_PER_MINUTE` | Optional | Simple throttling |
+Work in progress. Auth, Plaid linking, cursor sync, encrypted token storage and AI categorization are implemented, with Vitest coverage for the validators and the AI route. Sync runs inline in the request or webhook handler rather than in a background worker, the Plaid webhook uses a shared-secret query parameter rather than Plaid's signed JWT verification, and there is no public deployment yet.
 
-## Project Structure
-- App & routes: `app/`
-- Auth: `lib/auth.ts`, `app/api/auth/[...nextauth]/route.ts`
-- DB: `lib/db.ts`, schema `db/schema.ts`, migrations `drizzle/`
-- Plaid: `lib/plaid.ts`, API routes under `app/api/plaid/*`
-- AI: `lib/ai.ts`, `app/api/transactions/ai/route.ts`
-- UI: `components/dashboard/*`, `components/plaid-link-button.tsx`
-
-## Security Notes
-- Never store Plaid access tokens in the client; this project encrypts them at rest server-side.
-- Never commit `.env.local`; use Vercel/hosted secrets in production.
-
-## Deployment Notes (Vercel + Neon)
-- Generate migrations locally (`npm run db:generate`) and commit `drizzle/`.
-- Run migrations against production (`npm run db:migrate`) before `next build`.
-- Set Plaid + OpenAI keys in Vercel, and ensure webhook URLs match your deployment domain.
+---
+<sub>Built by [Aladdin Ali](https://github.com/NaxeCode) · [naxecode.github.io](https://naxecode.github.io)</sub>
