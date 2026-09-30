@@ -1,3 +1,5 @@
+<img src=".github/brand/logo.svg" width="80" alt="" />
+
 # Photon Trail
 
 A personal-finance pipeline: link bank accounts through Plaid, sync transactions into Postgres with cursor-based incremental sync, and get AI category suggestions with confidence scores.
@@ -67,6 +69,10 @@ Other scripts: `npm run db:generate` (after schema changes), `npm run db:studio`
 ## Status
 
 Work in progress. Auth, Plaid linking, cursor sync, encrypted token storage and AI categorization are implemented, with Vitest coverage for the validators and the AI route. Sync runs inline in the request or webhook handler rather than in a background worker, the Plaid webhook uses a shared-secret query parameter rather than Plaid's signed JWT verification, and there is no public deployment yet.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
 
 ---
 <sub>Built by [Aladdin Ali](https://github.com/NaxeCode) · [naxecode.github.io](https://naxecode.github.io)</sub>
