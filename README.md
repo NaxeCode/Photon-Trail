@@ -70,6 +70,14 @@ Other scripts: `npm run db:generate` (after schema changes), `npm run db:studio`
 
 Work in progress. Auth, Plaid linking, cursor sync, encrypted token storage and AI categorization are implemented, with Vitest coverage for the validators and the AI route. Sync runs inline in the request or webhook handler rather than in a background worker, the Plaid webhook uses a shared-secret query parameter rather than Plaid's signed JWT verification, and there is no public deployment yet.
 
+## How this project is run
+
+[![tracked in Linear](.github/brand/badges/run-linear.svg)](https://linear.app) [![AI-reviewed · Codex](.github/brand/badges/run-codex.svg)](#how-this-project-is-run) [![PR-only main](.github/brand/badges/run-main.svg)](#how-this-project-is-run)
+
+- **Planning:** tracked in Linear as initiatives → projects → milestones → issues; branch names and PR titles carry the issue ID.
+- **Review:** every pull request gets a Codex review before merge.
+- **Guardrails:** the default branch changes only through pull requests (GitHub ruleset).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
