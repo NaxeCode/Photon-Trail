@@ -4,6 +4,8 @@ A bank can change an amount after the first import or withdraw a hold entirely. 
 
 ![The October reconciliation studio shows an incoming bank statement beside its operating ledger.](docs/images/reconciliation-studio.png)
 
+**[Try the reconciliation studio in your browser](https://naxe-portfolio-review.vercel.app/labs/photon-trail/)**
+
 ## Try the studio
 
 The sample is a fictional October close for Northline Print Co. Open the [standalone studio file](docs/demo/index.html), choose **Download raw file** on GitHub and open it in your browser. For the full Next.js app, run these commands with Node.js 20+ and open [the studio on localhost](http://localhost:3000/demo).
