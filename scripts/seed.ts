@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { db } from "../lib/db";
+import { getDb } from "../lib/db";
 import {
   aiCategorySuggestions,
   plaidItems,
@@ -15,7 +15,7 @@ async function main() {
     console.warn("PLAID_ENCRYPTION_KEY not set; using insecure local-dev-key for seeding.");
   }
 
-  const [existingUser] = await db
+  const [existingUser] = await getDb()
     .select()
     .from(users)
     .where(eq(users.email, "demo@aurora.money"));
@@ -23,7 +23,7 @@ async function main() {
   const userId =
     existingUser?.id ??
     (
-      await db
+      await getDb()
         .insert(users)
         .values({
           email: "demo@photontrail.app",
@@ -33,7 +33,7 @@ async function main() {
         .returning()
     )[0].id;
 
-  const [existingItem] = await db
+  const [existingItem] = await getDb()
     .select()
     .from(plaidItems)
     .where(eq(plaidItems.id, "demo-item"));
@@ -41,7 +41,7 @@ async function main() {
   const itemId =
     existingItem?.id ??
     (
-      await db
+      await getDb()
         .insert(plaidItems)
         .values({
           id: "demo-item",
@@ -99,13 +99,13 @@ async function main() {
   ];
 
   for (const tx of txPayload) {
-    const [inserted] = await db
+    const [inserted] = await getDb()
       .insert(transactions)
       .values({
         userId,
         plaidItemId: itemId,
         plaidId: `seed-${tx.name?.toLowerCase().replace(/\s+/g, "-")}-${Math.random().toString(36).slice(2, 6)}`,
-        amount: tx.amount,
+        amount: String(tx.amount),
         currency: "USD",
         name: tx.name,
         merchant: tx.merchant,
@@ -121,7 +121,7 @@ async function main() {
       .returning();
 
     if (inserted) {
-      await db.insert(aiCategorySuggestions).values({
+      await getDb().insert(aiCategorySuggestions).values({
         transactionId: inserted.id,
         category: tx.aiCategory ?? tx.category ?? "Uncategorized",
         confidence: tx.aiConfidence ?? 0.8,

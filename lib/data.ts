@@ -1,6 +1,6 @@
 import { cache } from "react";
-import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
-import { db } from "./db";
+import { and, desc, eq, gte, ilike, inArray, ne, lte, or, sql } from "drizzle-orm";
+import { getDb } from "./db";
 import {
   aiCategorySuggestions,
   plaidItems,
@@ -18,9 +18,12 @@ export type TransactionFilters = {
   limit?: number;
 };
 
+const effective = sql<string>`coalesce(${transactions.manualCategory}, ${transactions.category}, ${transactions.aiCategory}, 'Uncategorized')`;
+
 function buildWhere(userId: string, filters: TransactionFilters) {
   return and(
     eq(transactions.userId, userId),
+    ne(transactions.status, "removed"),
     filters.from ? gte(transactions.postedAt, filters.from) : undefined,
     filters.to ? lte(transactions.postedAt, filters.to) : undefined,
     filters.minAmount !== undefined
@@ -29,7 +32,7 @@ function buildWhere(userId: string, filters: TransactionFilters) {
     filters.maxAmount !== undefined
       ? lte(transactions.amount, String(filters.maxAmount))
       : undefined,
-    filters.category ? eq(transactions.category, filters.category) : undefined,
+    filters.category ? eq(effective, filters.category) : undefined,
     filters.search
       ? or(
           ilike(transactions.name, `%${filters.search}%`),
@@ -45,21 +48,21 @@ export const getDashboardData = cache(
     const where = buildWhere(userId, filters);
 
     const [txs, grouped] = await Promise.all([
-      db
+      getDb()
         .select()
         .from(transactions)
         .where(where)
         .orderBy(desc(transactions.postedAt))
         .limit(50),
-      db
+      getDb()
         .select({
-          category: transactions.category,
+          category: effective,
           total: sql<number>`coalesce(sum(${transactions.amount}), 0)`,
           count: sql<number>`count(*)`,
         })
         .from(transactions)
         .where(where)
-        .groupBy(transactions.category),
+        .groupBy(effective),
     ]);
 
     const timeline = txs.reduce<Record<string, number>>((acc, tx) => {
@@ -94,7 +97,7 @@ export async function getPaginatedTransactions(
   const where = buildWhere(userId, filters);
 
   const [items, totalResult] = await Promise.all([
-    db
+    getDb()
       .select({
         id: transactions.id,
         userId: transactions.userId,
@@ -122,7 +125,7 @@ export async function getPaginatedTransactions(
       .orderBy(desc(transactions.postedAt))
       .limit(take)
       .offset((page - 1) * take),
-    db
+    getDb()
       .select({ count: sql<number>`count(*)` })
       .from(transactions)
       .where(where),
@@ -150,9 +153,9 @@ export async function updateManualCategory(
   transactionId: string,
   manualCategory: string,
 ) {
-  const [updated] = await db
+  const [updated] = await getDb()
     .update(transactions)
-    .set({ manualCategory, category: manualCategory, updatedAt: new Date() })
+    .set({ manualCategory, updatedAt: new Date() })
     .where(and(eq(transactions.id, transactionId), eq(transactions.userId, userId)))
     .returning();
 
@@ -175,7 +178,7 @@ export async function upsertAiSuggestions(
   const ids = suggestions.map((s) => s.id);
   if (!ids.length) return [];
 
-  const valid = await db
+  const valid = await getDb()
     .select({ id: transactions.id })
     .from(transactions)
     .where(and(eq(transactions.userId, userId), inArray(transactions.id, ids)));
@@ -185,7 +188,7 @@ export async function upsertAiSuggestions(
   if (!filtered.length) return [];
 
   for (const suggestion of filtered) {
-    await db
+    await getDb()
       .update(transactions)
       .set({
         aiCategory: suggestion.category,
@@ -194,7 +197,7 @@ export async function upsertAiSuggestions(
       })
       .where(eq(transactions.id, suggestion.id));
 
-    await db.insert(aiCategorySuggestions).values({
+    await getDb().insert(aiCategorySuggestions).values({
       transactionId: suggestion.id,
       category: suggestion.category,
       confidence: suggestion.confidence,

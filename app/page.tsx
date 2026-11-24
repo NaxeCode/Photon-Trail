@@ -1,9 +1,14 @@
+import { redirect } from "next/navigation";
+import Link from "next/link";
 import { DashboardClient } from "@/components/dashboard/dashboard-client";
 import { SignInCta } from "@/components/signin-cta";
 import { getServerAuthSession } from "@/lib/auth";
 import { getDashboardData, getPaginatedTransactions } from "@/lib/data";
 
+export const dynamic = "force-dynamic";
+
 export default async function Home() {
+  if (!process.env.DATABASE_URL) redirect("/demo");
   const session = await getServerAuthSession();
 
   if (!session?.user?.id) {
@@ -19,6 +24,7 @@ export default async function Home() {
         </div>
         <div className="mt-6">
           <SignInCta />
+          <p className="mt-6 text-center"><Link className="underline" href="/demo">Explore the fictional reconciliation studio</Link></p>
         </div>
       </main>
     );
