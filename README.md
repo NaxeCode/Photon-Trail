@@ -4,7 +4,7 @@ A bank can change an amount after the first import or withdraw a hold entirely. 
 
 ![The October reconciliation studio shows an incoming bank statement beside its operating ledger.](docs/images/reconciliation-studio.png)
 
-**[Try the reconciliation studio in your browser](https://naxe-portfolio-review.vercel.app/labs/photon-trail/)**
+**[Try the reconciliation studio in your browser](https://naxe.dev/labs/photon-trail/)**
 
 ## Try the studio
 
