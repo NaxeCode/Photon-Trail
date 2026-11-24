@@ -44,7 +44,7 @@ export async function categorizeTransactions(input: unknown) {
     throw new Error("Invalid transaction payload for AI");
   }
 
-  const messages = [
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     {
       role: "system",
       content:

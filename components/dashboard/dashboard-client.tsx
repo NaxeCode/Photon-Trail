@@ -57,7 +57,7 @@ export function DashboardClient({
     data: dashboardData,
     mutate: mutateDashboard,
     error: dashboardError,
-  } = useSWR(`/api/dashboard?${query}`, undefined, {
+  } = useSWR<DashboardClientProps["initialDashboard"]>(`/api/dashboard?${query}`, {
     fallbackData: initialDashboard,
   });
 
@@ -66,7 +66,7 @@ export function DashboardClient({
     mutate: mutateTransactions,
     isValidating: transactionsLoading,
     error: transactionsError,
-  } = useSWR(`/api/transactions?${query}`, undefined, {
+  } = useSWR<DashboardClientProps["initialTransactions"]>(`/api/transactions?${query}`, {
     fallbackData: initialTransactions,
   });
 

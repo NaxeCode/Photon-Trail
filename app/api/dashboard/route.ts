@@ -1,11 +1,12 @@
-import { authOptions } from "@/lib/auth";
+import { getServerAuthSession } from "@/lib/auth";
 import { getDashboardData } from "@/lib/data";
 import { transactionQuerySchema } from "@/lib/validators";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerAuthSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

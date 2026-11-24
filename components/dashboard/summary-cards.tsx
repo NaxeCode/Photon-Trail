@@ -37,7 +37,7 @@ export function SummaryCards({ totalSpend, timeframe, categories }: SummaryCards
       </Card>
       <Card className="glass">
         <CardHeader className="space-y-2">
-          <Badge variant="secondary" className="w-fit">
+          <Badge variant="outline" className="w-fit">
             Top category
           </Badge>
           <CardTitle className="text-xl">

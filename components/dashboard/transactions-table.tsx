@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@stargazers-stella/cosmic-ui";
+import { effectiveCategory } from "@/lib/reconciliation/page";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -121,7 +122,7 @@ export function TransactionsTable({
                 </TableCell>
                 <TableCell className="max-w-[160px]">
                   <Select
-                    value={tx.manualCategory ?? tx.category ?? tx.aiCategory ?? "Other"}
+                    value={effectiveCategory(tx)}
                     onValueChange={(value) => handleManual(tx.id, value)}
                   >
                     <SelectTrigger className="w-full">

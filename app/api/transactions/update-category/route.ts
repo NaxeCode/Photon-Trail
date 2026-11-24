@@ -1,11 +1,10 @@
-import { authOptions } from "@/lib/auth";
+import { getServerAuthSession } from "@/lib/auth";
 import { updateManualCategory } from "@/lib/data";
 import { manualCategorySchema } from "@/lib/validators";
-import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 
 export async function PATCH(request: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await getServerAuthSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

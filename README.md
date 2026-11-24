@@ -1,86 +1,48 @@
-<img src=".github/brand/logo.svg" width="80" alt="" />
-
 # Photon Trail
 
-A personal-finance pipeline: link bank accounts through Plaid, sync transactions into Postgres with cursor-based incremental sync, and get AI category suggestions with confidence scores.
+A bank can change an amount after the first import or withdraw a hold entirely. Two charges can also settle for the same amount at the same merchant. Photon Trail lets an operator replay the feed, inspect the evidence for a match and retain the decision that closes the ledger.
 
-[![status](https://img.shields.io/badge/status-wip-dbbc7f?style=flat&labelColor=2d353b)](#status)
-![Next.js](https://img.shields.io/badge/Next.js-14-7fbbb3?style=flat&labelColor=2d353b&logo=nextdotjs&logoColor=d3c6aa)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-7fbbb3?style=flat&labelColor=2d353b&logo=typescript&logoColor=d3c6aa)
-![Postgres](https://img.shields.io/badge/Postgres-Neon-7fbbb3?style=flat&labelColor=2d353b&logo=postgresql&logoColor=d3c6aa)
-![Drizzle](https://img.shields.io/badge/Drizzle-ORM-7fbbb3?style=flat&labelColor=2d353b&logo=drizzle&logoColor=d3c6aa)
-![Plaid](https://img.shields.io/badge/Plaid-transactions-7fbbb3?style=flat&labelColor=2d353b)
+![The October reconciliation studio shows an incoming bank statement beside its operating ledger.](docs/images/reconciliation-studio.png)
 
-## What it does
+## Try the studio
 
-- Google sign-in through NextAuth with database-backed sessions (Drizzle adapter).
-- Plaid Link flow: the server creates the link token and exchanges the public token; the Plaid access token never reaches the client and is stored encrypted.
-- Incremental transaction sync with Plaid's `/transactions/sync` cursor, triggered by the user or by a Plaid webhook.
-- AI categorization: batches of transactions go to OpenAI, the JSON response is validated with Zod, and suggestions are stored with a confidence score and the model name.
-- Dashboard with summary cards, category breakdown, timeline, filters, and inline manual category overrides.
+The sample is a fictional October close for Northline Print Co. Run it with Node.js 20+ and open [the studio on localhost](http://localhost:3000/demo).
 
-## How it works
-
-```mermaid
-flowchart LR
-    U[Browser] -->|Plaid Link| P[Plaid]
-    U -->|public token| X["/api/plaid/exchange"]
-    X -->|exchange| P
-    X -->|AES-256-GCM token| DB[(Neon Postgres)]
-    U -->|manual sync| S["/api/plaid/sync"]
-    P -.webhook.-> WH["/api/plaid/webhook"]
-    S & WH --> SY[lib/plaid-sync<br/>cursor loop]
-    SY -->|transactionsSync| P
-    SY -->|upsert on plaidId<br/>save cursor| DB
-    U -->|categorize| AI["/api/transactions/ai"]
-    AI -->|rate limit, retry| O[OpenAI]
-    AI -->|Zod-validated suggestions| DB
+```sh
+npm ci
+npm run dev
 ```
 
-Mechanisms in the code:
+1. In the ledger, the selected Oct 27 Counterform entry has the bank category **Shopping**. Choose **Print production** and save the override.
+2. Select **Simulate interruption**. The new freight debit and the revised press charge land. The hold is still active and the checkpoint stays at `OCT-017`. Refresh the tab to recover the partial import.
+3. In **Match review**, inspect the two $54.70 candidates for `ST-301`. The Oct 28 entry ranks first. The proof-run receipt identifies Oct 27. Confirm `NL-103`.
+4. **Retry interrupted import** finishes the removal and advances to `OCT-018`. The closing ledger has six unique records, five active debits totaling **$392.60** and one withdrawn hold. **Replay import** changes zero ledger entries. Both reviewer decisions survive refresh.
+5. Open **Evaluation** to inspect all five labeled outcomes. The weighted ranker gets **4/5**, including an abstention. The unique exact-merchant baseline gets **2/5**. The missed Counterform match is displayed alongside the expected ID.
 
-- **Idempotent ingestion.** Transactions are upserted on a unique `plaidId`, so replaying a sync page or receiving a duplicate webhook updates rows instead of duplicating them. Removed transactions are soft-marked `status = 'removed'`.
-- **Cursor checkpointing.** The sync loop pages with `count: 100` until `has_more` is false, then stores `next_cursor` and `lastSyncedAt` on the Plaid item so the next run resumes from there (`lib/plaid-sync.ts`).
-- **Secrets at rest.** Plaid access tokens are encrypted with AES-256-GCM using a key derived via scrypt from `PLAID_ENCRYPTION_KEY` (`lib/crypto.ts`).
-- **Retries with backoff.** OpenAI calls retry up to 3 times on 429 and 5xx responses, doubling from 500 ms (`lib/ai.ts`).
-- **Rate limiting.** AI categorization is limited per user per minute (`AI_RATE_LIMIT_PER_MINUTE`, default 6) and returns `429` with `Retry-After` (`lib/rate-limit.ts`). The limiter is in-memory, so it is per instance.
-- **Validation at the boundary.** Request bodies and model output are parsed with Zod before anything is written, and AI suggestions are applied only to transaction ids owned by the signed-in user.
-- **Auth on every data route.** API routes check the NextAuth session; the Plaid webhook checks an optional shared secret.
-- **Schema and migrations.** Drizzle schema in `db/schema.ts`, generated SQL migrations in `drizzle/`, indexes on `(userId, postedAt)` and `(userId, category)`.
+The browser stores this sample's entries, checkpoint and decisions in session storage for the current tab. **Reset sample** restores its opening ledger. The sample makes no bank, model or database requests. To share the same UI as a portable file, run `npm run demo:export` and open `dist/demo/index.html`. It includes its scripts, icons and styles and can be served under a nested path.
 
-Data model: `users`, `accounts`, `sessions`, `verificationTokens` (auth), `plaidItems` (encrypted token, cursor, sync status), `transactions` (amount, merchant, Plaid category, `aiCategory`, `aiConfidence`, `manualCategory`), and `aiCategorySuggestions` (category, confidence, rationale, model, raw suggestion).
+## Inspect the implementation
 
-## Getting started
+| Question | Evidence |
+| --- | --- |
+| How does a repeat page converge? | The demo and connected sync consume the same ordered [page writes](lib/reconciliation/page.ts). The [Plaid sync](lib/plaid-sync.ts) upserts by provider ID, soft-removes withdrawn entries and saves the cursor after the final page. Reviewer categories live in a separate column. |
+| What actually survives an interrupted database import? | A [PostgreSQL integration test](__tests__/sync-postgres.test.ts) applies the checked-in migration to disposable PGlite, fails the provider after one page, adds an override and delivers the same pages twice. It verifies IDs, amounts, category provenance, active rows and the cursor. The provider responses are fixtures. |
+| Why did an entry rank first? | The [matcher](lib/reconciliation/matching.ts) fits character-trigram TF-IDF to active ledger merchants. It combines cosine similarity, amount proximity and date proximity. The UI shows each candidate's evidence. Scores below the threshold abstain. Close scores are flagged for review. |
+| What did the comparison measure? | The [fixture](lib/reconciliation/fixture.ts) contains five hand-labeled lines for this packet. The [tests](__tests__/reconciliation.test.ts) check every labeled outcome, the close-call miss and an unseen spelling variant. The five-case score describes this fixture only. |
 
-Requires Node.js 20+, a Postgres database (Neon or local) and Plaid sandbox keys. OpenAI is optional.
+Run `npm test` for the database integration, ranking, replay, validator and AI-route tests. Run `npm run build` to compile the full Next.js app and type-check the connected routes. The studio's deterministic matcher operates on the sample statement. The connected app's OpenAI feature suggests transaction categories.
 
-```bash
-git clone https://github.com/NaxeCode/Photon-Trail.git
-cd Photon-Trail
-npm install
-cp .env.example .env.local   # DATABASE_URL, NEXTAUTH_*, GOOGLE_*, PLAID_*, PLAID_ENCRYPTION_KEY, OPENAI_API_KEY
+## Connected app
+
+The signed-in product uses Google sessions, Plaid Link, a Neon/Postgres ledger, model suggestions with confidence and human category overrides. Configure a database, NextAuth, Google OAuth, Plaid sandbox credentials and a token-encryption key from [.env.example](.env.example). Set an OpenAI key to exercise connected categorization. Export the database variables into the shell for Drizzle commands.
+
+```sh
+cp .env.example .env.local
+# Supply your own development configuration before running migrations.
 npm run db:migrate
-npm run db:seed
-npm run dev                  # http://localhost:3000
+npm run dev
 ```
 
-Other scripts: `npm run db:generate` (after schema changes), `npm run db:studio`, `npm test` (Vitest), `npm run lint`.
+Transactions sync inline through an authenticated request or a webhook. Plaid tokens are encrypted at rest. The webhook uses an optional shared secret. Model requests use a per-process rate limit, bounded retries and validated output. The studio demonstrates recovery from sequential redelivery. Concurrent sync workers and live provider delivery are outside this fixture.
 
-## Status
-
-Work in progress. Auth, Plaid linking, cursor sync, encrypted token storage and AI categorization are implemented, with Vitest coverage for the validators and the AI route. Sync runs inline in the request or webhook handler rather than in a background worker, the Plaid webhook uses a shared-secret query parameter rather than Plaid's signed JWT verification, and there is no public deployment yet.
-
-## How this project is run
-
-[![tracked in Linear](.github/brand/badges/run-linear.svg)](https://linear.app) [![AI-reviewed · Codex](.github/brand/badges/run-codex.svg)](#how-this-project-is-run) [![PR-only main](.github/brand/badges/run-main.svg)](#how-this-project-is-run)
-
-- **Planning:** tracked in Linear as initiatives → projects → milestones → issues; branch names and PR titles carry the issue ID.
-- **Review:** every pull request gets a Codex review before merge.
-- **Guardrails:** the default branch changes only through pull requests (GitHub ruleset).
-
-## License
-
-MIT. See [LICENSE](LICENSE).
-
----
-<sub>Built by [Aladdin Ali](https://github.com/NaxeCode) · [naxecode.github.io](https://naxecode.github.io)</sub>
+Built by [Aladdin Ali](https://github.com/NaxeCode). [MIT license](LICENSE).

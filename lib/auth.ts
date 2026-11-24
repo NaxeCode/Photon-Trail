@@ -1,16 +1,21 @@
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { type NextAuthOptions, getServerSession } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { db } from "./db";
+import { getDb } from "./db";
 import * as schema from "@/db/schema";
 
 export const authOptions: NextAuthOptions = {
-  adapter: DrizzleAdapter(db, {
-    users: schema.users,
-    accounts: schema.accounts,
-    sessions: schema.sessions,
-    verificationTokens: schema.verificationTokens,
-  }),
+  get adapter() {
+    return DrizzleAdapter(getDb(), {
+      usersTable: schema.users,
+      accountsTable: schema.accounts,
+      // The existing migration makes sessionToken unique and non-null. The adapter
+      // looks it up by equality but types that column as a primary key.
+      // @ts-expect-error UUID id is the primary key in this schema.
+      sessionsTable: schema.sessions,
+      verificationTokensTable: schema.verificationTokens,
+    });
+  },
   session: { strategy: "database" },
   providers: [
     GoogleProvider({
@@ -31,4 +36,5 @@ export const authOptions: NextAuthOptions = {
   },
 };
 
-export const getServerAuthSession = () => getServerSession(authOptions);
+export const getServerAuthSession = () =>
+  process.env.DATABASE_URL ? getServerSession(authOptions) : Promise.resolve(null);

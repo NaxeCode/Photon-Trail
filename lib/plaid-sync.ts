@@ -1,6 +1,7 @@
+import { pageWrites } from "./reconciliation/page";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { TransactionsSyncResponse } from "plaid";
-import { db } from "./db";
+import { getDb } from "./db";
 import { decryptSecret } from "./crypto";
 import { plaidClient } from "./plaid";
 import { plaidItems, transactions } from "@/db/schema";
@@ -30,7 +31,7 @@ function mapPlaidTransaction(
     plaidId: tx.transaction_id,
     plaidItemId: item.id,
     userId: item.userId,
-    amount: tx.amount,
+    amount: String(tx.amount),
     currency: tx.iso_currency_code ?? "USD",
     name: tx.name ?? tx.merchant_name ?? "Transaction",
     merchant: tx.merchant_name,
@@ -51,7 +52,7 @@ async function upsertTransactions(
 
   const rows = payloads.map((tx) => mapPlaidTransaction(tx, item));
 
-  await db
+  await getDb()
     .insert(transactions)
     .values(rows)
     .onConflictDoUpdate({
@@ -64,7 +65,7 @@ async function upsertTransactions(
         description: sql`excluded.description`,
         status: sql`excluded.status`,
         category: sql`excluded.category`,
-        postedAt: sql`excluded.postedAt`,
+        postedAt: sql`excluded."postedAt"`,
         pending: sql`excluded.pending`,
         plaidItemId: sql`excluded."plaidItemId"`,
         updatedAt: new Date(),
@@ -93,20 +94,22 @@ export async function syncPlaidItem(item: PlaidItemRow): Promise<SyncSummary> {
     cursor = response.data.next_cursor;
     hasMore = response.data.has_more;
 
-    added += await upsertTransactions(item, response.data.added);
-    modified += await upsertTransactions(item, response.data.modified);
-
-    if (response.data.removed?.length) {
-      const ids = response.data.removed.map((tx) => tx.transaction_id);
-      await db
-        .update(transactions)
-        .set({ status: "removed", updatedAt: new Date() })
-        .where(inArray(transactions.plaidId, ids));
-      removed += ids.length;
+    for (const write of pageWrites(response.data)) {
+      if (write.kind === "removed") {
+        if (!write.ids.length) continue;
+        await getDb().update(transactions)
+          .set({ status: "removed", updatedAt: new Date() })
+          .where(and(eq(transactions.plaidItemId, item.id), inArray(transactions.plaidId, write.ids)));
+        removed += write.ids.length;
+      } else {
+        const count = await upsertTransactions(item, write.rows);
+        if (write.kind === "added") added += count;
+        else modified += count;
+      }
     }
   }
 
-  await db
+  await getDb()
     .update(plaidItems)
     .set({
       cursor: cursor ?? null,
@@ -120,7 +123,7 @@ export async function syncPlaidItem(item: PlaidItemRow): Promise<SyncSummary> {
 }
 
 export async function syncPlaidForUser(userId: string, itemIds?: string[]) {
-  const items = await db
+  const items = await getDb()
     .select()
     .from(plaidItems)
     .where(
@@ -146,7 +149,7 @@ export async function syncPlaidForUser(userId: string, itemIds?: string[]) {
 }
 
 export async function syncPlaidItemById(itemId: string) {
-  const [item] = await db.select().from(plaidItems).where(eq(plaidItems.id, itemId));
+  const [item] = await getDb().select().from(plaidItems).where(eq(plaidItems.id, itemId));
   if (!item) {
     throw new Error("Plaid item not found");
   }
