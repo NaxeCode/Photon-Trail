@@ -6,7 +6,7 @@ A bank can change an amount after the first import or withdraw a hold entirely. 
 
 ## Try the studio
 
-The sample is a fictional October close for Northline Print Co. Run it with Node.js 20+ and open [the studio on localhost](http://localhost:3000/demo).
+The sample is a fictional October close for Northline Print Co. Open the [standalone studio file](docs/demo/index.html), choose **Download raw file** on GitHub and open it in your browser. For the full Next.js app, run these commands with Node.js 20+ and open [the studio on localhost](http://localhost:3000/demo).
 
 ```sh
 npm ci
